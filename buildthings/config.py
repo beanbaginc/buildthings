@@ -90,6 +90,25 @@ class IsolationConfig(TypedDict):
     local_packages_path: str | None
 
 
+class NPMConfig(TypedDict):
+    """Configuration for NPM.
+
+    Version Added:
+        1.0
+    """
+
+    #: Whether NPM packages should be installed for the build type.
+    install: bool
+
+    #: The list of Python modules required for NPM installs.
+    #:
+    #: Each of these will be set up as an NPM workspace, allowing any
+    #: :file:`package.json` files in these modules to be used as
+    #: dependencies for generating a :file:`node_modules` and running
+    #: custom build steps.
+    python_modules: Sequence[str]
+
+
 class PyProjectConfig:
     """A loaded pyproject.toml configuration file.
 
@@ -128,16 +147,8 @@ class PyProjectConfig:
     #: Build-specific configuration for isolated environments.
     isolation_build_configs: Mapping[BuildType, IsolationConfig]
 
-    #: The list of Python packages required for NPM installs.
-    #:
-    #: Each of these will be set up as an NPM workspace, allowing any
-    #: :file:`package.json` files in these packages to be used as
-    #: dependencies for generating a :file:`node_modules` and running
-    #: custom build steps.
-    npm_python_deps: Sequence[str]
-
-    #: Whether to manage an NPM install for the package.
-    use_npm: bool
+    #: Build-specific configuration for NPM.
+    npm_configs: Mapping[BuildType, NPMConfig]
 
     @classmethod
     def from_file(
@@ -171,10 +182,7 @@ class PyProjectConfig:
         self.editable_mode = 'compat'
         self.extra_build_steps = {}
         self.isolation_build_configs = {}
-
-        # NPM configuration.
-        self.npm_python_deps = []
-        self.use_npm = False
+        self.npm_configs = {}
 
     def load(
         self,
@@ -258,15 +266,10 @@ class PyProjectConfig:
         self.editable_mode = editable_mode
 
         # NPM configuration.
-        self.use_npm = self.load_config_value(
-            full_key='tool.buildthings.npm.enabled',
-            default=self.use_npm,
-        )
-
-        self.npm_python_deps = self.load_config_value(
-            full_key='tool.buildthings.npm.python-dependencies',
-            default=self.npm_python_deps,
-        )
+        self.npm_configs = {
+            build_type: self._load_npm_config(build_type=build_type)
+            for build_type in ALL_BUILD_TYPES
+        }
 
     def load_config_value(
         self,
@@ -561,6 +564,34 @@ class PyProjectConfig:
             local_packages_path=self.load_config_value(
                 full_key=f'{prefix}.local-packages-path',
                 default=default['local_packages_path'],
+            ),
+        )
+
+    def _load_npm_config(
+        self,
+        *,
+        build_type: BuildType,
+    ) -> NPMConfig:
+        """Load configuration for NPM.
+
+        Args:
+            build_type (str):
+                The build type.
+
+        Returns:
+            NPMConfig:
+            The loaded configuration.
+        """
+        prefix = f'tool.buildthings.{build_type}.npm'
+
+        return NPMConfig(
+            install=self.load_config_value(
+                full_key=f'{prefix}.install',
+                default=False,
+            ),
+            python_modules=self.load_config_value(
+                full_key=f'{prefix}.python-modules',
+                default=[],
             ),
         )
 

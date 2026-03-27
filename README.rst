@@ -461,10 +461,22 @@ Build steps run when building a wheel.
 Building with NPM
 -----------------
 
-tool.buildthings.npm.enabled
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Each build type supports its own custom NPM configuration:
 
-Set to ``true`` to enable NPM support.
+* ``tool.buildthings.editable.npm``
+* ``tool.buildthings.sdist.npm``
+* ``tool.buildthings.wheel.npm``
+
+.. note::
+
+   Using npm for ``wheel`` types is discouraged. It should be possible to
+   build new packages from your ``sdist`` without needing Internet access.
+
+
+tool.buildthings.<build_type>.npm.install
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Set to ``true`` to install NPM packages and workspaces for this build.
 
 When enabled, buildthings can manage NPM workspaces that expose Python
 packages as NPM-compatible modules, and will run ``npm install`` for you.
@@ -475,19 +487,19 @@ packages as NPM-compatible modules, and will run ``npm install`` for you.
 
 .. code-block:: toml
 
-   [tool.buildthings.npm]
-   enabled = true
+   [tool.buildthings.editable.npm]
+   install = true
 
 
-tool.buildthings.npm.python-dependencies
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+tool.buildthings.<build_type>.npm.python-modules
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 A list of Python package names to expose as NPM workspaces.
 
-For each entry, buildthings creates a symlink under
-``.npm-workspaces/`` that points to the Python dependency's module so that NPM
-can resolve the package alongside your JavaScript dependencies. Each
-module should include a ``package.json`` within it.
+For each entry, buildthings creates a symlink under ``.npm-workspaces/``
+that points to the Python module so that NPM can resolve the package
+alongside your JavaScript dependencies. Each module should include a
+``package.json`` within it.
 
 To use this, set the following in the ``package.json`` in the root of your
 source tree:
@@ -505,11 +517,11 @@ source tree:
 
 .. code-block:: toml
 
-   [tool.buildthings.npm]
-   enabled = true
-   python-dependencies = [
-       "Djblets",
-       "myproduct-frontend",
+   [tool.buildthings.editable.npm]
+   install = true
+   python-modules = [
+       "djblets",
+       "myproduct_frontend",
    ]
 
 

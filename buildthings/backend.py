@@ -552,11 +552,12 @@ def _run_build(
         The basename of the generated build file.
     """
     config = _get_config()
+    npm_config = config.npm_configs[build_type]
 
     patch_setuptools_package_deps(deps)
 
-    if config.use_npm:
-        _rebuild_npm_workspaces()
+    if npm_config['install']:
+        _rebuild_npm_workspaces(python_modules=npm_config['python_modules'])
         _install_npm_packages()
 
     _run_build_steps(config.extra_build_steps[build_type])
@@ -566,7 +567,10 @@ def _run_build(
     return build_func(dest_directory, config_settings, **kwargs)
 
 
-def _rebuild_npm_workspaces() -> None:
+def _rebuild_npm_workspaces(
+    *,
+    python_modules: Sequence[str],
+) -> None:
     """Rebuild the links under .npm-workspaces for static media building.
 
     This will look up the module paths for any Python modules in
@@ -575,8 +579,12 @@ def _rebuild_npm_workspaces() -> None:
 
     Version Added:
         1.0
+
+    Args:
+        python_modules (list of str):
+            A list of Python modules to inspect and link into the workspace.
     """
-    config = _get_config()
+    logger.info('Setting up NPM workspaces...')
 
     # NOTE: Build backends run from within the root of the source tree.
     #       We could leave this as a relative path, but we'll make it
@@ -588,7 +596,7 @@ def _rebuild_npm_workspaces() -> None:
 
     from importlib import import_module
 
-    for mod_name in config.npm_python_deps:
+    for mod_name in python_modules:
         try:
             mod = import_module(mod_name)
         except ImportError:
@@ -610,6 +618,30 @@ def _rebuild_npm_workspaces() -> None:
             pass
 
         os.symlink(os.path.dirname(mod_path), symlink_path)
+
+
+def _install_npm_packages() -> None:
+    """Install NPM packages.
+
+    Version Added:
+        1.0
+
+    Raises:
+        RuntimeError:
+            There was an error installing npm packages.
+    """
+    logger.info('Installing NPM modules...')
+
+    try:
+        subprocess.run(
+            ['npm', 'install'],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            check=True,
+            text=True,
+        )
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f'Failed to install npm packages: {e.output}')
 
 
 def _run_build_steps(
@@ -642,25 +674,3 @@ def _run_build_steps(
                                   shell=True)
         except subprocess.CalledProcessError as e:
             raise RuntimeError(f'Failed to run command {command!r}: {e}')
-
-
-def _install_npm_packages() -> None:
-    """Install NPM packages.
-
-    Version Added:
-        1.0
-
-    Raises:
-        RuntimeError:
-            There was an error installing npm packages.
-    """
-    try:
-        subprocess.run(
-            ['npm', 'install'],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            check=True,
-            text=True,
-        )
-    except subprocess.CalledProcessError as e:
-        raise RuntimeError(f'Failed to install npm packages: {e.output}')
