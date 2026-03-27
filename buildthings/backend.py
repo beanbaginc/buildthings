@@ -17,6 +17,8 @@ from typing_extensions import TypeAlias
 
 from buildthings.config import IsolationConfig, PyProjectConfig
 from buildthings.local_paths import apply_local_dep_paths
+from buildthings.setuptools_patches import (patch_setuptools,
+                                            patch_setuptools_package_deps)
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -41,6 +43,10 @@ logger = logging.getLogger(__name__)
 #: Version Added:
 #:     1.0
 _config: (PyProjectConfig | None) = None
+
+
+# Patch setuptools so we can inject configuration for the build.
+patch_setuptools()
 
 
 def get_requires_for_build_editable(
@@ -180,7 +186,7 @@ def prepare_metadata_for_build_editable(
         str:
         The basename for the generated ``.dist-info`` directory.
     """
-    _write_dependencies(_get_editable_package_dependencies())
+    patch_setuptools_package_deps(_get_editable_package_dependencies())
 
     return _build_meta.prepare_metadata_for_build_editable(
         metadata_directory,
@@ -213,7 +219,7 @@ def prepare_metadata_for_build_wheel(
     """
     config = _get_config()
 
-    _write_dependencies(config.dependencies)
+    patch_setuptools_package_deps(config.dependencies)
 
     return _build_meta.prepare_metadata_for_build_wheel(
         metadata_directory,
@@ -547,7 +553,7 @@ def _run_build(
     """
     config = _get_config()
 
-    _write_dependencies(deps)
+    patch_setuptools_package_deps(deps)
 
     if config.use_npm:
         _rebuild_npm_workspaces()
@@ -557,10 +563,7 @@ def _run_build(
 
     build_func = getattr(_build_meta, f'build_{build_type}')
 
-    try:
-        return build_func(dest_directory, config_settings, **kwargs)
-    finally:
-        _cleanup()
+    return build_func(dest_directory, config_settings, **kwargs)
 
 
 def _rebuild_npm_workspaces() -> None:
@@ -661,45 +664,3 @@ def _install_npm_packages() -> None:
         )
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f'Failed to install npm packages: {e.output}')
-
-
-def _write_dependencies(
-    deps: Sequence[str],
-) -> None:
-    """Write dependencies to a file.
-
-    This will write to the package requirements file, so that
-    :file:`pyproject.toml` can reference it.
-
-    Version Added:
-        1.0
-
-    Args:
-        deps (list of str, optional):
-            The list of dependencies to write.
-    """
-    config = _get_config()
-
-    dirname = os.path.dirname(config.package_deps_file)
-
-    if not os.path.exists(dirname):
-        os.makedirs(dirname, 0o755)
-
-    with open(config.package_deps_file, 'w', encoding='utf-8') as fp:
-        for dependency in deps:
-            fp.write(f'{dependency}\n')
-
-
-def _cleanup() -> None:
-    """Perform any post-build cleanup.
-
-    This will delete the generated package requirements file.
-
-    Version Added:
-        1.0
-    """
-    config = _get_config()
-    package_deps_file = config.package_deps_file
-
-    if os.path.exists(package_deps_file):
-        os.unlink(package_deps_file)

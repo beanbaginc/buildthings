@@ -136,9 +136,6 @@ class PyProjectConfig:
     #: custom build steps.
     npm_python_deps: Sequence[str]
 
-    #: The name of the package dependencies file to write to.
-    package_deps_file: str
-
     #: Whether to manage an NPM install for the package.
     use_npm: bool
 
@@ -174,7 +171,6 @@ class PyProjectConfig:
         self.editable_mode = 'compat'
         self.extra_build_steps = {}
         self.isolation_build_configs = {}
-        self.package_deps_file = ''
 
         # NPM configuration.
         self.npm_python_deps = []
@@ -205,31 +201,6 @@ class PyProjectConfig:
 
         with open(path, _read_mode) as fp:
             self.config = load_toml(fp)
-
-        # Sanity-check required settings.
-        project_dynamic = self.load_config_value(full_key='project.dynamic')
-
-        if not project_dynamic or 'dependencies' not in project_dynamic:
-            raise ValueError(
-                'The package is missing the following configuration:\n'
-                '\n'
-                '[project]\n'
-                'dynamic = ["dependencies"]'
-            )
-
-        package_deps_file = self.load_config_value(
-            full_key='tool.setuptools.dynamic.dependencies.file',
-        )
-
-        if not package_deps_file:
-            raise ValueError(
-                'The package is missing the following configuration:\n'
-                '\n'
-                '[tool.setuptools.dynamic]\n'
-                'dependencies = { file = "build/package-requirements.txt" }'
-            )
-
-        self.package_deps_file = package_deps_file
 
         # Load the common state.
         self._load_dynamic()
@@ -455,6 +426,14 @@ class PyProjectConfig:
         that should be looked up through a Python import.
         """
         dynamic: set[str] = set()
+
+        try:
+            dynamic.update(self._load_key_dotted(
+                self.config,
+                ('project', 'dynamic'),
+            ))
+        except KeyError:
+            pass
 
         try:
             dynamic.update(self._load_key_dotted(

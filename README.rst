@@ -58,12 +58,6 @@ To switch to Buildthings, place the following at the top of your
    requires = ['buildthings']
    build-backend = 'buildthings.backend'
 
-   [project]
-   dynamic = ['dependencies']
-
-   [tool.setuptools.dynamic]
-   dependencies = { file = 'build/package-requirements.txt' }
-
 
 That's it! Now comes the cool part.
 
