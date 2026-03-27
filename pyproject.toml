@@ -10,13 +10,17 @@ backend-path = ['.']
 
 
 [project]
+dynamic = ['version']
+
 name = 'buildthings'
-version = '1.0.0'
 description = 'A Python setuptools-based build backend with super powers'
 authors = [
     {name = 'Beanbag, Inc.', email='questions@beanbaginc.com'},
 ]
-license = { text='MIT' }
+license = 'MIT'
+license-files = ['LICENSE']
+readme = 'README.rst'
+
 requires-python = '>=3.8'
 
 dependencies = [
@@ -25,3 +29,36 @@ dependencies = [
     'toml; python_version < "3.11"',
     'typing_extensions',
 ]
+
+keywords = [
+	'build',
+	'packaging',
+]
+
+classifiers = [
+    'Development Status :: 5 - Production/Stable',
+    'Intended Audience :: Developers',
+    'Operating System :: OS Independent',
+    'Programming Language :: Python',
+    'Programming Language :: Python :: 3',
+    'Programming Language :: Python :: 3.8',
+    'Programming Language :: Python :: 3.9',
+    'Programming Language :: Python :: 3.10',
+    'Programming Language :: Python :: 3.11',
+    'Programming Language :: Python :: 3.12',
+    'Programming Language :: Python :: 3.13',
+    'Programming Language :: Python :: 3.14',
+    'Topic :: Software Development',
+    'Topic :: Software Development :: Build Tools',
+    'Topic :: Software Development :: Libraries :: Python Modules',
+]
+
+
+[project.urls]
+Homepage = 'https://github.com/beanbaginc/buildthings'
+Documentation = 'https://github.com/beanbaginc/buildthings'
+Repository = 'https://github.com/beanbaginc/buildthings'
+
+
+[tool.setuptools.dynamic]
+version = { attr = 'buildthings.get_package_version' }
