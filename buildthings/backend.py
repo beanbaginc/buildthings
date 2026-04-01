@@ -556,26 +556,45 @@ def _run_build(
 
     patch_setuptools_package_deps(deps)
 
-    if npm_config['install']:
-        _rebuild_npm_workspaces(python_modules=npm_config['python_modules'])
-        _install_npm_packages()
+    prev_npm_workspaces: Mapping[str, str] = {}
 
-    _run_build_steps(config.extra_build_steps[build_type])
+    try:
+        if npm_config['install']:
+            prev_npm_workspaces = _rebuild_npm_workspaces(
+                python_modules=npm_config['python_modules'],
+            )
+            _install_npm_packages()
 
-    build_func = getattr(_build_meta, f'build_{build_type}')
+        _run_build_steps(config.extra_build_steps[build_type])
 
-    return build_func(dest_directory, config_settings, **kwargs)
+        build_func = getattr(_build_meta, f'build_{build_type}')
+
+        return build_func(dest_directory, config_settings, **kwargs)
+    finally:
+        # Restore any NPM workspace symlinks.
+        for symlink_path, dest_path in prev_npm_workspaces.items():
+            try:
+                os.unlink(symlink_path)
+                os.symlink(dest_path, symlink_path)
+            except OSError as e:
+                logger.warning('Failed to restore symlink path %r back to '
+                               '%r: %s',
+                               symlink_path, dest_path, e)
 
 
 def _rebuild_npm_workspaces(
     *,
     python_modules: Sequence[str],
-) -> None:
+) -> Mapping[str, str]:
     """Rebuild the links under .npm-workspaces for static media building.
 
     This will look up the module paths for any Python modules in
     ``tool.buildthings.npm.python-dependencies`` and link them so that
     JavaScript and CSS build infrastructure can import files correctly.
+
+    Version Changed:
+        1.0.1:
+        This now returns a mapping of previous symlinks.
 
     Version Added:
         1.0
@@ -583,8 +602,14 @@ def _rebuild_npm_workspaces(
     Args:
         python_modules (list of str):
             A list of Python modules to inspect and link into the workspace.
+
+    Returns:
+        dict:
+        A mapping of overridden symlinks to previous destinations.
     """
     logger.info('Setting up NPM workspaces...')
+
+    prev_npm_workspaces: dict[str, str] = {}
 
     # NOTE: Build backends run from within the root of the source tree.
     #       We could leave this as a relative path, but we'll make it
@@ -610,6 +635,11 @@ def _rebuild_npm_workspaces(
 
         symlink_path = os.path.join(npm_workspaces_dir, mod_name)
 
+        if os.path.exists(symlink_path):
+            # Record the existing symlink destination so we can restore it
+            # later.
+            prev_npm_workspaces[symlink_path] = os.readlink(symlink_path)
+
         # Unlink this unconditionally, so we don't have to worry about things
         # like an existing dangling symlink that shows as non-existent.
         try:
@@ -618,6 +648,8 @@ def _rebuild_npm_workspaces(
             pass
 
         os.symlink(os.path.dirname(mod_path), symlink_path)
+
+    return prev_npm_workspaces
 
 
 def _install_npm_packages() -> None:
