@@ -18,13 +18,6 @@ if TYPE_CHECKING:
 _old_ConfigExpander_init = _ConfigExpander.__init__
 
 
-#: Whether _ConfigExpander has initialized.
-#:
-#: Version Added:
-#:     1.0
-_config_expander_initted = False
-
-
 #: A list of functions to run after _ConfigExpander finishes initializing.
 #:
 #: Version Added:
@@ -37,6 +30,18 @@ def patch_setuptools_package_deps(
 ) -> None:
     """Patch setuptools to set a static list of package dependencies.
 
+    The patch is applied to the next ``_ConfigExpander`` instance that
+    setuptools constructs. According to PEP 517, frontends are *supposed* to
+    only invoke build hooks once per process. Unfortunately, ``tox`` (via
+    ``pyproject_api``) invokes multiple build hooks in succession,
+    and each hook causes setuptools to instantiate a fresh
+    ``_ConfigExpander``.
+
+    We replace any previously registered patch so the deps from this call apply
+    to the next expander only (otherwise stale patches from earlier hooks
+    would stack and ``setdefault(...).extend()`` would duplicate the dependency
+    list).
+
     Version Added:
         1.0
 
@@ -44,9 +49,8 @@ def patch_setuptools_package_deps(
         deps (list of str):
             The list of dependencies to set.
     """
-    if _config_expander_initted:
-        raise AssertionError('Attempted to patch dependencies too late!')
-
+    # Apply the patch to the next _ConfigExpander instance that setuptools
+    # constructs.
     def _patch_deps(
         self: _ConfigExpander,
     ) -> None:
@@ -56,7 +60,9 @@ def patch_setuptools_package_deps(
         self.dynamic_cfg.pop('dependencies', None)
         self.project_cfg.setdefault('dependencies', []).extend(deps)
 
-    _config_expander_post_funcs.append(_patch_deps)
+    global _config_expander_post_funcs
+
+    _config_expander_post_funcs = [_patch_deps]
 
 
 def patch_setuptools() -> None:
@@ -73,14 +79,10 @@ def patch_setuptools() -> None:
         1.0
     """
     def _ConfigExpander_init(self, *args, **kwargs) -> None:
-        global _config_expander_initted
-
         _old_ConfigExpander_init(self, *args, **kwargs)
 
         for func in _config_expander_post_funcs:
             func(self)
-
-        _config_expander_initted = True
 
     assert _ConfigExpander.__init__ is _old_ConfigExpander_init, (
         'Attempted to patch _ConfigExpander.__init__ more than once!'
