@@ -102,9 +102,6 @@ Managing Dependencies
 tool.buildthings.dependencies
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-.. versionchanged:: 1.1
-   Added per-build dependencies.
-
 A list of Python packages to install at install time.
 
 This should be used *instead of* ``project.dependencies``.
@@ -161,8 +158,6 @@ or, for an editable-specific configuration (as an example):
 
 tool.buildthings.<build_type>.exclude-deps
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-.. versionadded:: 1.1
 
 A list of Python package dependencies to exclude from the package.
 
