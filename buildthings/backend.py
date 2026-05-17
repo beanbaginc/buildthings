@@ -17,6 +17,7 @@ from typing_extensions import TypeAlias
 
 from buildthings.config import IsolationConfig, PyProjectConfig
 from buildthings.local_paths import apply_local_dep_paths
+from buildthings.requirements import filter_dependencies
 from buildthings.setuptools_patches import (patch_setuptools,
                                             patch_setuptools_package_deps)
 
@@ -217,9 +218,7 @@ def prepare_metadata_for_build_wheel(
         str:
         The basename for the generated ``.dist-info`` directory.
     """
-    config = _get_config()
-
-    patch_setuptools_package_deps(config.dependencies)
+    patch_setuptools_package_deps(_get_package_dependencies('wheel'))
 
     return _build_meta.prepare_metadata_for_build_wheel(
         metadata_directory,
@@ -301,11 +300,9 @@ def build_sdist(
         str:
         The basename of the generated ``.tar.gz`` file.
     """
-    config = _get_config()
-
     return _run_build(
         build_type='sdist',
-        deps=config.dependencies,
+        deps=_get_package_dependencies('sdist'),
         dest_directory=sdist_directory,
         config_settings=config_settings,
     )
@@ -342,11 +339,9 @@ def build_wheel(
         str:
         The basename of the generated ``.whl`` file.
     """
-    config = _get_config()
-
     return _run_build(
         build_type='wheel',
-        deps=config.dependencies,
+        deps=_get_package_dependencies('wheel'),
         dest_directory=wheel_directory,
         config_settings=config_settings,
         metadata_directory=metadata_directory,
@@ -376,6 +371,7 @@ def _get_config() -> PyProjectConfig:
 
 def _get_isolated_build_dependencies(
     isolation_config: IsolationConfig,
+    build_type: BuildType,
 ) -> Sequence[str]:
     """Return the dependencies needed for an isolated build environment.
 
@@ -402,6 +398,9 @@ def _get_isolated_build_dependencies(
         isolation_config (buildthings.config.IsolationConfig):
             The configuration for the isolation environment.
 
+        build_type (buildthings.config.BuildType):
+            The build type for the environment.
+
     Returns:
         list of str:
         The list of dependency specifiers.
@@ -409,20 +408,20 @@ def _get_isolated_build_dependencies(
     config = _get_config()
     deps: list[str] = []
 
+    exclude_deps = set(isolation_config['exclude_deps'])
+
     if isolation_config['include_dev_deps']:
         deps += config.dev_dependencies
 
     if isolation_config['include_install_deps']:
-        deps += config.dependencies
+        package_deps_config = config.package_dependencies[build_type]
 
-    # TODO: Normalize the dependencies on both sides of the comparison so we
-    #       don't need exact dependency specifiers.
-    if exclude_deps := set(isolation_config['exclude_deps']):
-        deps = [
-            dep
-            for dep in deps
-            if dep not in exclude_deps
-        ]
+        deps += package_deps_config['dependencies']
+        exclude_deps.update(package_deps_config['exclude_deps'])
+
+    if exclude_deps:
+        deps = filter_dependencies(deps,
+                                   exclude=exclude_deps)
 
     return deps
 
@@ -447,11 +446,51 @@ def _get_editable_package_dependencies() -> Sequence[str]:
         The list of dependency specifiers.
     """
     config = _get_config()
+    package_deps_config = config.package_dependencies['editable']
 
-    return [
+    deps = [
         *config.dev_dependencies,
-        *config.dependencies,
+        *package_deps_config['dependencies'],
     ]
+
+    exclude_deps = package_deps_config['exclude_deps']
+
+    if exclude_deps:
+        deps = filter_dependencies(deps,
+                                   exclude=set(exclude_deps))
+
+    return deps
+
+
+def _get_package_dependencies(
+    build_type: BuildType,
+) -> Sequence[str]:
+    """Return the dependencies needed for a package's metadata.
+
+    Any packages set to be excluded will be removed from the final list.
+
+    Version Added:
+        1.1
+
+    Args:
+        build_type (buildthings.config.BuildType):
+            The build type for the environment.
+
+    Returns:
+        list of str:
+        The list of dependency specifiers.
+    """
+    config = _get_config()
+    package_deps_config = config.package_dependencies[build_type]
+
+    deps = package_deps_config['dependencies']
+    exclude_deps = package_deps_config['exclude_deps']
+
+    if exclude_deps:
+        deps = filter_dependencies(deps,
+                                   exclude=set(exclude_deps))
+
+    return deps
 
 
 def _get_requires_for_build(
@@ -471,7 +510,7 @@ def _get_requires_for_build(
        [tool.buildthings.isolation.editable]
        include-dev-deps = true
        include-install-deps = true
-       exclude_deps = ['somedep']
+       exclude-deps = ['somedep']
 
     If any of the resulting dependencies are overriden by local dependencies
     found in :file:`.local-packages/`, then the local package paths will
@@ -504,7 +543,7 @@ def _get_requires_for_build(
     return apply_local_dep_paths(
         local_packages_path=isolation_config['local_packages_path'],
         deps=[
-            *_get_isolated_build_dependencies(isolation_config),
+            *_get_isolated_build_dependencies(isolation_config, build_type),
             *build_meta_func(config_settings),
         ],
     )
@@ -522,7 +561,7 @@ def _run_build(
 
     This will perform the following steps:
 
-    1. Write out the package dependencies to a file for setuptools to load.
+    1. Patch setuptools with the dependencies for the package.
     2. If configured, set up the NPM workspaces and install NPM packages.
     3. Run any package-defined build steps.
     4. Perform the build using the given configuration.

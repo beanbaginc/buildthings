@@ -59,6 +59,28 @@ class BuildStep(TypedDict):
     label: NotRequired[str]
 
 
+class BuildPackageDepsConfig(TypedDict):
+    """Configuration for a build's package dependencies.
+
+    Version Added:
+        1.1
+    """
+
+    #: The dependencies for the build type.
+    #:
+    #: This contains the build-specific dependencies, if provided, or the
+    #: common dependencies if not.
+    #:
+    #: It does not factor in any exclusions from :py:attr:`exclude_deps`.
+    dependencies: Sequence[str]
+
+    #: The dependencies to exclude.
+    #:
+    #: These must be removed from :py:attr:`dependencies` when building a
+    #: final dependencies list.
+    exclude_deps: Sequence[str]
+
+
 class IsolationConfig(TypedDict):
     """Configuration for an isolated build.
 
@@ -126,9 +148,6 @@ class PyProjectConfig:
     #: The full deserialized pyproject.toml data.
     config: _PyProjectConfigDict
 
-    #: The list of install-time dependencies.
-    dependencies: Sequence[str]
-
     #: The list of editable-time development dependencies.
     dev_dependencies: Sequence[str]
 
@@ -149,6 +168,12 @@ class PyProjectConfig:
 
     #: Build-specific configuration for NPM.
     npm_configs: Mapping[BuildType, NPMConfig]
+
+    #: The list of install-time dependencies.
+    #:
+    #: Version Added:
+    #:     1.1
+    package_dependencies: Mapping[BuildType, BuildPackageDepsConfig]
 
     @classmethod
     def from_file(
@@ -177,12 +202,12 @@ class PyProjectConfig:
         self.config = {}
         self.files_to_collect = []
         self.dynamic = set()
-        self.dependencies = []
         self.dev_dependencies = []
         self.editable_mode = 'compat'
         self.extra_build_steps = {}
         self.isolation_build_configs = {}
         self.npm_configs = {}
+        self.package_dependencies = {}
 
     def load(
         self,
@@ -212,8 +237,9 @@ class PyProjectConfig:
 
         # Load the common state.
         self._load_dynamic()
-        self._load_dependencies()
         self._load_dev_dependencies()
+
+        common_deps = self._load_dependencies()
 
         # Isolation configuration.
         isolation_common_config = self._load_isolation_options(
@@ -238,6 +264,23 @@ class PyProjectConfig:
                 build_type=build_type,
                 default=isolation_defaults.get(build_type,
                                                isolation_common_config),
+            )
+            for build_type in ALL_BUILD_TYPES
+        }
+
+        # Per-build package dependency configuration.
+        self.package_dependencies = {
+            build_type: BuildPackageDepsConfig(
+                dependencies=self.load_config_value(
+                    full_key=f'tool.buildthings.{build_type}.dependencies',
+                    default=common_deps,
+                    validate_type=list,
+                ),
+                exclude_deps=self.load_config_value(
+                    full_key=f'tool.buildthings.{build_type}.exclude-deps',
+                    default=[],
+                    validate_type=list,
+                ),
             )
             for build_type in ALL_BUILD_TYPES
         }
@@ -278,6 +321,7 @@ class PyProjectConfig:
         allow_dynamic: bool = True,
         default: Any = None,
         file_loader: (Callable[[str], Any] | None) = None,
+        validate_type: (type | None) = None,
     ) -> Any:
         """Load a value from a configuration key.
 
@@ -287,6 +331,10 @@ class PyProjectConfig:
         If the key is marked as a dynamic configuration key, this will
         take care of loading the corresponding value either from the
         specified attribute or file.
+
+        Version Changed:
+            1.1:
+            Added the ``validate_type`` argument.
 
         Args:
             full_key (str):
@@ -301,6 +349,15 @@ class PyProjectConfig:
 
             file_loader (callable, optional):
                 The file loader used to load dynamic file specifiers, if any.
+
+            validate_type (type, optional):
+                A type that the result must match.
+
+                If provided, and the type is not a match, a
+                :py:exc:`ValueError` will be raised with details.
+
+                Version Added:
+                    1.1
 
         Returns:
             object:
@@ -323,6 +380,14 @@ class PyProjectConfig:
         is_dynamic = key in self.dynamic
 
         if not is_dynamic:
+            if (validate_type is not None and
+                not isinstance(config_value, validate_type)):
+                raise ValueError(
+                    f'Key "{full_key}" must resolve to a '
+                    f'{validate_type.__name__} (not '
+                    f'{type(config_value).__name__}).'
+                )
+
             return config_value
 
         if not allow_dynamic:
@@ -369,6 +434,14 @@ class PyProjectConfig:
 
             if result is not None and callable(result):
                 result = result()
+
+            if (validate_type is not None and
+                not isinstance(result, validate_type)):
+                raise ValueError(
+                    f'Key "{full_key}" must resolve to a '
+                    f'{validate_type.__name__} (not '
+                    f'{type(result).__name__}).'
+                )
 
             return result
         elif has_file:
@@ -448,12 +521,20 @@ class PyProjectConfig:
 
         self.dynamic = dynamic
 
-    def _load_dependencies(self) -> None:
+    def _load_dependencies(self) -> Sequence[str]:
         """Load a list of dependencies.
 
         This is loaded from ``tool.buildthings.dependencies``. If not found,
         this will look for a :file:`requirements.txt` and try to load from
         that.
+
+        Version Changed:
+            1.1:
+            This now returns the dependencies instead of setting them.
+
+        Returns:
+            list of str:
+            The list of dependencies.
 
         Raises:
             ValueError:
@@ -483,7 +564,7 @@ class PyProjectConfig:
                 f'list this in "tool.buildthings.dynamic"?'
             )
 
-        self.dependencies = result or []
+        return result or []
 
     def _load_dev_dependencies(self) -> None:
         """Load a list of development dependencies.

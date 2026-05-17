@@ -102,6 +102,9 @@ Managing Dependencies
 tool.buildthings.dependencies
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+.. versionchanged:: 1.1
+   Added per-build dependencies.
+
 A list of Python packages to install at install time.
 
 This should be used *instead of* ``project.dependencies``.
@@ -110,6 +113,12 @@ Dependencies can also be installed in the isolated build environments using:
 ``tool.buildthings.isolation.include-install-deps`` or
 ``tool.buildthings.isolation.<build_type>.include-install-deps``. See
 `Isolated Build Environments <isolated-environments>`_ below.
+
+**Overridden by:**
+
+* ``tool.buildthings.editable.dependencies``
+* ``tool.buildthings.sdist.dependencies``
+* ``tool.buildthings.wheel.dependencies``
 
 **Default:** The contents of ``requirements.txt`` will be read, if present.
 
@@ -141,6 +150,41 @@ or:
    [tool.buildthings]
    dynamic = ["dependencies"]
    dependencies = {file = "requirements.txt"}
+
+or, for an editable-specific configuration (as an example):
+
+.. code-block:: toml
+
+   [tool.buildthings.editable]
+   dependencies = ["kgb"]
+
+
+tool.buildthings.<build_type>.exclude-deps
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. versionadded:: 1.1
+
+A list of Python package dependencies to exclude from the package.
+
+This is primarily intended to remove a dependency from an editable
+install, to help create a more lean editable environment.
+
+This will also affect the isolated build environment for that type. If
+you want to keep a dependency for the build type and only exclude it from
+the isolated build environment, use
+``tool.buildthings.isolation.<build_type>.exclude-deps`` instead.
+
+Values may be full version specifiers, "extras" packages, or just plain
+package names.
+
+**Default:** []
+
+**Example:**
+
+.. code-block:: toml
+
+   [tool.buildthings.editable]
+   exclude-deps = ['mysqldb']
 
 
 tool.buildthings.dev-dependencies
@@ -347,6 +391,9 @@ environment's final list of dependencies.
 This will filter out any depenencies that appear from using
 ``tool.buildthings.editable.isolation.include-dev-deps`` or
 ``tool.buildthings.editable.isolation.include-install-deps``.
+
+Values may be full version specifiers, "extras" packages, or just plain
+package names.
 
 **Overridden by:**
 
