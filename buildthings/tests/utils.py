@@ -29,13 +29,17 @@ _buildthings_path = os.path.dirname(buildthings.__file__)
 @contextmanager
 def setup_pyproject_toml(
     content: str,
-) -> Iterator[None]:
+) -> Iterator[str]:
     """Set up a temp working directory with a pyproject.toml file.
 
     This is a context manager that unit tests can use to establish a working
     package directory for testing. It will write the provided content to a
     :file:`pyproject.toml` in the directory and then run the test within it.
     The directory and all contents will be cleaned up after the test.
+
+    Version Changed:
+        1.2:
+        This now returns the project directory as the context.
 
     Version Added:
         1.1
@@ -45,7 +49,8 @@ def setup_pyproject_toml(
             The content to write to the :file:`pyproject.toml` file.
 
     Context:
-        The test will run within the populated temp directory.
+        str:
+        The newly-populated path.
     """
     prev_cwd = os.getcwd()
     dirpath = tempfile.mkdtemp()
@@ -65,7 +70,7 @@ def setup_pyproject_toml(
         fp.write(content)
 
     try:
-        yield
+        yield dirpath
     finally:
         os.chdir(prev_cwd)
         shutil.rmtree(dirpath)

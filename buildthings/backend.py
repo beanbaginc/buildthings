@@ -16,7 +16,8 @@ from setuptools import build_meta as _build_meta
 from typing_extensions import TypeAlias
 
 from buildthings.config import IsolationConfig, PyProjectConfig
-from buildthings.local_paths import apply_local_dep_paths
+from buildthings.local_paths import (apply_local_dep_paths,
+                                     get_local_dep_paths_for_tree)
 from buildthings.requirements import filter_dependencies
 from buildthings.setuptools_patches import (patch_setuptools,
                                             patch_setuptools_package_deps)
@@ -418,6 +419,15 @@ def _get_isolated_build_dependencies(
 
         deps += package_deps_config['dependencies']
         exclude_deps.update(package_deps_config['exclude_deps'])
+
+    # If any of the local packages in this tree have their own local packages,
+    # mark them as build-time dependencies.
+    if local_packages_path := isolation_config['local_packages_path']:
+        local_dep_paths = get_local_dep_paths_for_tree(
+            os.path.abspath(local_packages_path))
+
+        for local_dep_name, local_dep_path in local_dep_paths.items():
+            deps.append(f'{local_dep_name} @ file://{local_dep_path}')
 
     if exclude_deps:
         deps = filter_dependencies(deps,

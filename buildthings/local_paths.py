@@ -12,8 +12,12 @@ from typing import TYPE_CHECKING
 from packaging.requirements import Requirement
 from packaging.utils import canonicalize_name
 
+from buildthings.config import PyProjectConfig
+
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
+
+    from buildthings.config import BuildType
 
 
 #: A cache of computed local paths for dependencies.
@@ -25,13 +29,17 @@ if TYPE_CHECKING:
 #:
 #: Version Added:
 #:     1.0
-_local_dep_paths: (Mapping[str, str] | None) = None
+_local_dep_paths: dict[str, Mapping[str, str]] = {}
 
 
 def get_local_dep_paths(
     local_packages_path: str,
 ) -> Mapping[str, str]:
     """Return a mapping of dependencies to local paths.
+
+    Version Changed:
+        1.2:
+        This now caches per-path.
 
     Args:
         local_packages_path (str):
@@ -43,7 +51,9 @@ def get_local_dep_paths(
     """
     global _local_dep_paths
 
-    if _local_dep_paths is None:
+    local_dep_paths = _local_dep_paths.get(local_packages_path)
+
+    if local_dep_paths is None:
         local_paths: dict[str, str] = {}
 
         if local_packages_path and os.path.exists(local_packages_path):
@@ -51,9 +61,75 @@ def get_local_dep_paths(
                 local_paths[canonicalize_name(name)] = os.path.abspath(
                     os.readlink(os.path.join(local_packages_path, name)))
 
-        _local_dep_paths = local_paths
+        local_dep_paths = local_paths
+        _local_dep_paths[local_packages_path] = local_dep_paths
 
-    return _local_dep_paths
+    return local_dep_paths
+
+
+def get_local_dep_paths_for_tree(
+    local_packages_path: str,
+    *,
+    recurse_build_type: BuildType = 'editable',
+) -> Mapping[str, str]:
+    """Return a recursive mapping of local paths from a starting path.
+
+    Version Added:
+        1.2
+
+    Args:
+        local_packages_path (str):
+            The path to the :file:`.local-packages` directory.
+
+        recurse_build_type (str, optional):
+            The build type to use for looking up path settings.
+
+    Returns:
+        dict:
+        A mapping of normalized dependency names to paths.
+    """
+    all_local_paths: dict[str, str] = {}
+    seen: set[str] = set()
+
+    def _walk_local_path(
+        path: str,
+    ) -> None:
+        if path in seen:
+            return
+
+        seen.add(path)
+
+        pyproject_file = os.path.join(path, 'pyproject.toml')
+
+        if not os.path.exists(pyproject_file):
+            return
+
+        try:
+            dep_local_packages_path = (
+                PyProjectConfig.from_file(pyproject_file)
+                .isolation_build_configs[recurse_build_type]
+                ['local_packages_path']
+            )
+        except Exception:
+            # This may not be a buildthings file, or may be invalid.
+            # Skip it.
+            return
+
+        if dep_local_packages_path:
+            dep_local_packages_path = os.path.abspath(os.path.join(
+                path, dep_local_packages_path))
+
+            if os.path.exists(dep_local_packages_path):
+                local_dep_paths = get_local_dep_paths(dep_local_packages_path)
+
+                for dep_local_name, dep_local_path in local_dep_paths.items():
+                    all_local_paths[dep_local_name] = dep_local_path
+                    _walk_local_path(dep_local_path)
+
+    for path in get_local_dep_paths(local_packages_path).values():
+        _walk_local_path(path)
+
+    return all_local_paths
 
 
 def apply_local_dep_paths(
