@@ -2,6 +2,13 @@
 Buildthings Releases
 ====================
 
+Buildthings 1.2 (4-August-2026)
+===============================
+
+* When depending on a local tree, the isolated build environment will now
+  consider the dependencies' own ``.local-packages`` paths for dependencies.
+
+
 Buildthings 1.1 (17-May-2026)
 =============================
 
