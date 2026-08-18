@@ -1,0 +1,20 @@
+env_list = [
+    "3.8",
+    "3.9",
+    "3.10",
+    "3.11",
+    "3.12",
+    "3.13",
+    "3.14",
+]
+
+[env_run_base]
+use_develop = true
+
+deps = [
+    "-r dev-requirements.txt",
+]
+
+commands = [
+    ["pytest", { replace = "posargs", extend = "true" }],
+]
